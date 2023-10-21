@@ -1,53 +1,57 @@
-#include "secrets.h"
 #include <Arduino.h>
 #include <WiFi.h>
+#include "secrets.h"
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
-#define THING_NAME "esp32"
-#define AWS_IOT_SUBSCRIBE_TOPIC "lightIntensitySub"
-#define AWS_IOT_PUBLISH_TOPIC "lightIntensityPub"
-#define AWS_IOT_ENDPOINT "a20vk5db81a0va-ats.iot.us-east-1.amazonaws.com" 
+#define AWS_IOT_SUBSCRIBE_TOPIC "hackathon2023/lightSub"
+#define AWS_IOT_PUBLISH_TOPIC "hackathon2023/lightPub"
+#define AWS_IOT_ENDPOINT "a20vk5db81a0va-ats.iot.eu-west-1.amazonaws.com"
 
-int sensorPin = 11;
-int value = 0;  
+#define THINGNAME "hackathon2023-esp32-light-intensity"
+
+int sensorPin = 35;
+int value = 0; 
 
 WiFiClientSecure net = WiFiClientSecure();
 PubSubClient client(net);
 
-boolean establishWifiConnection() {
-  const char* ssid = "ENO"; 
-  const char* password = "02826ENO@innolabs!";
-
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-    
-  int attempts = 0;
-  while(WiFi.status() != WL_CONNECTED && attempts < 5) {
-      delay(1000);
-      Serial.println("Connecting to WiFi..");
-      Serial.println("Status:" + WiFi.status());
-      attempts++;
-  }
-
-  return WiFi.status() == WL_CONNECTED;
+void messageHandler(char* topic, byte* payload, unsigned int length)
+{
+  StaticJsonDocument<200> doc;
+  deserializeJson(doc, payload);
+  const char* message = doc["message"];
+  
+  Serial.println("MessageHandler");
+  Serial.println(message);
 }
 
-void setCertificate() {
+void connectAWS()
+{
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+ 
+  Serial.println("Connecting to Wi-Fi");
+ 
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    delay(500);
+    Serial.print(".");
+  }
+ 
   net.setCACert(AWS_CERT_CA);
   net.setCertificate(AWS_CERT_CRT);
   net.setPrivateKey(AWS_CERT_PRIVATE);
-}
-
-void connectToAWS() {
+ 
   client.setServer(AWS_IOT_ENDPOINT, 8883);
  
-  //client.setCallback(messageHandler);
-
+  client.setCallback(messageHandler);
+ 
   Serial.println("Connecting to AWS IOT");
 
-  while (!client.connect(THING_NAME))
+ 
+  while (!client.connect(THINGNAME))
   {
     Serial.print(".");
     delay(100);
@@ -61,38 +65,33 @@ void connectToAWS() {
  
   // Subscribe to a topic
   client.subscribe(AWS_IOT_SUBSCRIBE_TOPIC);
- 
+
   Serial.println("AWS IoT Connected!");
 }
-void setup() {
-  Serial.begin(9600);
-  pinMode(sensorPin, INPUT);
 
-  if(establishWifiConnection()) {
-    Serial.println("Connected to the WiFi network");
-
-    //setCertificate();
-    //connectToAWS();
-  }
-
-}
-
-void publishMessage(int value)
+void publishMessage(int val)
 {
   StaticJsonDocument<200> doc;
-  doc["value"] = value;
+  doc["value"] = val;
   char jsonBuffer[512];
   serializeJson(doc, jsonBuffer); // print to client
  
   client.publish(AWS_IOT_PUBLISH_TOPIC, jsonBuffer);
 }
 
+void setup() {
+  Serial.begin(9600);
+  pinMode(sensorPin, INPUT);
+  connectAWS();
+}
+
 void loop() {
-  delay(4000);
+
+  delay(2000);
   value = analogRead(sensorPin);
-  float voltage = value * (5.0/1025) * 1000;
-  float resistance = 10000 * ( voltage / ( 5000.0 - voltage) );
-  int lux = (500.0 / resistance)*1000;
-  Serial.println(lux);
-  //publishMessage(lux);
+  Serial.println("Loop:");
+  Serial.println(value);
+
+  publishMessage(value);
+  client.loop();
 }
