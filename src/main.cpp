@@ -11,6 +11,10 @@
 
 #define THINGNAME "hackathon2023-esp32-light-intensity"
 
+#define DAY 1
+#define NIGHT 0
+
+int DAY_NIGHT_LIGHT_VALUE_THRESHOLD = 3000;
 int sensorPin = 35;
 int value = 0; 
 
@@ -21,10 +25,10 @@ void messageHandler(char* topic, byte* payload, unsigned int length)
 {
   StaticJsonDocument<200> doc;
   deserializeJson(doc, payload);
-  const char* message = doc["message"];
+  DAY_NIGHT_LIGHT_VALUE_THRESHOLD = doc["threshold"];
   
   Serial.println("MessageHandler");
-  Serial.println(message);
+  Serial.println(DAY_NIGHT_LIGHT_VALUE_THRESHOLD);
 }
 
 void connectAWS()
@@ -72,7 +76,7 @@ void connectAWS()
 void publishMessage(int val)
 {
   StaticJsonDocument<200> doc;
-  doc["value"] = val;
+  doc["light"] = val;
   char jsonBuffer[512];
   serializeJson(doc, jsonBuffer); // print to client
  
@@ -87,11 +91,9 @@ void setup() {
 
 void loop() {
 
-  delay(2000);
+  delay(1000);
   value = analogRead(sensorPin);
-  Serial.println("Loop:");
   Serial.println(value);
-
-  publishMessage(value);
+  publishMessage(value < DAY_NIGHT_LIGHT_VALUE_THRESHOLD ? DAY : NIGHT);
   client.loop();
 }
