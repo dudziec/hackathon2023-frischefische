@@ -4,6 +4,9 @@
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include <SPI.h>  
+#include <Wire.h>
+#include "Adafruit_TCS34725.h"
 
 #define AWS_IOT_SUBSCRIBE_TOPIC "hackathon2023/lightSub"
 #define AWS_IOT_PUBLISH_TOPIC "hackathon2023/lightPub"
@@ -14,9 +17,11 @@
 #define DAY 1
 #define NIGHT 0
 
-int DAY_NIGHT_LIGHT_VALUE_THRESHOLD = 3000;
+int dayNightThreshold = 100;
 int sensorPin = 35;
 int value = 0; 
+
+Adafruit_TCS34725 tcs = Adafruit_TCS34725(TCS34725_INTEGRATIONTIME_101MS, TCS34725_GAIN_4X);
 
 WiFiClientSecure net = WiFiClientSecure();
 PubSubClient client(net);
@@ -25,10 +30,7 @@ void messageHandler(char* topic, byte* payload, unsigned int length)
 {
   StaticJsonDocument<200> doc;
   deserializeJson(doc, payload);
-  DAY_NIGHT_LIGHT_VALUE_THRESHOLD = doc["threshold"];
-  
-  Serial.println("MessageHandler");
-  Serial.println(DAY_NIGHT_LIGHT_VALUE_THRESHOLD);
+  dayNightThreshold = doc["light"];
 }
 
 void connectAWS()
@@ -67,33 +69,47 @@ void connectAWS()
     return;
   }
  
-  // Subscribe to a topic
   client.subscribe(AWS_IOT_SUBSCRIBE_TOPIC);
 
   Serial.println("AWS IoT Connected!");
 }
 
-void publishMessage(int val)
+void publishMessage(int isDay, int lux)
 {
   StaticJsonDocument<200> doc;
-  doc["light"] = val;
+  doc["light"] = isDay;
+  doc["value"] = lux;
+  doc["threshold"] = dayNightThreshold;
   char jsonBuffer[512];
-  serializeJson(doc, jsonBuffer); // print to client
+  serializeJson(doc, jsonBuffer);
  
   client.publish(AWS_IOT_PUBLISH_TOPIC, jsonBuffer);
 }
 
 void setup() {
   Serial.begin(9600);
+
+  if (tcs.begin()) {
+    Serial.println("Found sensor");
+  } else {
+    Serial.println("No TCS34725 found ... check your connections");
+    while (1);
+  }
+
   pinMode(sensorPin, INPUT);
   connectAWS();
 }
 
 void loop() {
-
   delay(1000);
-  value = analogRead(sensorPin);
-  Serial.println(value);
-  publishMessage(value < DAY_NIGHT_LIGHT_VALUE_THRESHOLD ? DAY : NIGHT);
+  uint16_t r, g, b, c, colorTemp, lux;
+
+  tcs.getRawData(&r, &g, &b, &c);
+
+  lux = tcs.calculateLux(r, g, b);
+  Serial.println("Lux");
+  Serial.println(lux);
+  
+  publishMessage(lux > dayNightThreshold ? DAY : NIGHT,  lux);
   client.loop();
 }
